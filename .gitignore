@@ -1,0 +1,16 @@
+node_modules/
+builds/*
+!builds/.gitkeep
+dist/
+.vite/
+# O cartucho é material da Activision: não redistribuir.
+River Raid (1982) (Activision) [!].a26
+.DS_Store
+src-tauri/target/
+tools/capturas/navegadores/
+tools/capturas/node_modules/
+builds/mac/
+tools/android-sdk/
+tools/capturas/*.png
+android/local.properties
+tools/xwin-cache/
