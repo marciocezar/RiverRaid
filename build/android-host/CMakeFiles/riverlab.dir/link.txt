@@ -1,0 +1,2 @@
+/usr/bin/ar qc libriverlab.a CMakeFiles/riverlab.dir/Users/marcio/_learn/Games/RiverRaide/src/core/river.c.o CMakeFiles/riverlab.dir/Users/marcio/_learn/Games/RiverRaide/src/core/present.c.o
+/usr/bin/ranlib libriverlab.a

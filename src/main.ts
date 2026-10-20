@@ -1,44 +1,91 @@
-// Ponto de entrada: monta o Phaser com a proporção da área de jogo fixa em 160x192.
-import Phaser from "phaser";
-import { ALTURA_CONTROLES, ALTURA_JOGO, LARGURA_TELA } from "./core/config.ts";
-import { CenaTitulo } from "./cenas/titulo.ts";
-import { CenaJogo } from "./cenas/jogo.ts";
-import { ESCALA } from "./render/escala.ts";
-import { CenaGaleria } from "./cenas/galeria.ts";
-import { usarHudToque } from "./plataforma.ts";
-import { som } from "./systems/instancias.ts";
+import Phaser from 'phaser'
+import { frame, setSpeedGear, startRun, togglePause, createWorld } from './core/loop'
+import { Phase, W, H, type World } from './core/types'
+import { detectShell } from './platform'
+import { TiaAudio } from './systems/audio'
+import { bindInput, createCommands } from './systems/input'
+import { paint } from './systems/render'
 
-// O canvas tem ESCALA vezes a resolução lógica; as cenas aplicam zoom ESCALA na câmera.
-const altura = ALTURA_JOGO + (usarHudToque() ? ALTURA_CONTROLES : 0);
+const world: World = createWorld()
+const commands = createCommands()
+const audio = new TiaAudio()
+const shell = detectShell()
 
-// Política de áudio: WebKit (Mac com Tauri, iOS com Capacitor) só libera o AudioContext
-// quando a criação ou o resume acontece dentro de um evento direto do usuário. Por isso o
-// desbloqueio roda no próprio evento DOM, e não no laço do Phaser.
-for (const evento of ["pointerdown", "touchend", "keydown", "click"] as const) {
-  window.addEventListener(evento, () => som.desbloquear(), { capture: true, passive: true });
+function begin(): void {
+  audio.unlock()
+  if (world.phase === Phase.Title || world.phase === Phase.Over) startRun(world)
 }
-// M liga ou desliga o som em qualquer tela, sem disputar com os controles de jogo.
-window.addEventListener("keydown", (e) => {
-  if (e.code === "KeyM" && !e.repeat) som.alternar();
-});
-// Ao voltar para o primeiro plano (app minimizado, aba reaberta), o sistema pode ter suspendido o áudio.
-document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") som.desbloquear();
-});
+
+class Play extends Phaser.Scene {
+  private pixels!: ImageData
+  private tex!: Phaser.Textures.CanvasTexture
+
+  constructor() {
+    super('play')
+  }
+
+  create(): void {
+    this.pixels = new ImageData(W, H)
+    this.tex = this.textures.createCanvas('fb', W, H)!
+    this.add.image(W / 2, H / 2, 'fb').setOrigin(0.5)
+    paint(world, this.pixels)
+    this.tex.context.putImageData(this.pixels, 0, 0)
+    this.tex.refresh()
+  }
+
+  update(): void {
+    if (commands.start) {
+      commands.start = false
+      begin()
+    }
+    if (commands.pause) {
+      commands.pause = false
+      audio.unlock()
+      togglePause(world)
+    }
+    if (commands.restart) {
+      commands.restart = false
+      audio.unlock()
+      startRun(world)
+    }
+    if (commands.backToTitle) {
+      commands.backToTitle = false
+      world.phase = Phase.Title
+      world.input = 0
+    }
+    if (commands.gear) {
+      setSpeedGear(world, commands.gear)
+      commands.gear = 0
+    }
+    world.input = commands.bits
+    frame(world)
+    audio.pump(world)
+    paint(world, this.pixels)
+    this.tex.context.putImageData(this.pixels, 0, 0)
+    this.tex.refresh()
+  }
+}
+
+const hud = document.querySelector<HTMLElement>('#touch')!
+bindInput(commands, shell, hud)
+
+window.addEventListener('pointerdown', () => {
+  if (world.phase === Phase.Title || world.phase === Phase.Over) begin()
+})
 
 new Phaser.Game({
   type: Phaser.AUTO,
-  parent: "jogo",
-  width: LARGURA_TELA * ESCALA,
-  height: altura * ESCALA,
-  backgroundColor: "#000000",
+  width: W,
+  height: H,
+  parent: 'stage',
+  backgroundColor: '#000000',
   pixelArt: true,
-  roundPixels: true,
   scale: {
-    // FIT preserva a proporção; nada é esticado. Com pixelArt o zoom não suaviza.
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
+    width: W,
+    height: H,
   },
-  // ?galeria abre a tela de revisão da arte; o jogo normal começa no título.
-  scene: new URLSearchParams(window.location.search).has("galeria") ? [CenaGaleria] : [CenaTitulo, CenaJogo],
-});
+  scene: [Play],
+  banner: false,
+})

@@ -1,85 +1,124 @@
 # Stack
 
-## Núcleo e web
+Cinco saídas, uma base de jogo. O quadro, o mapa e o som estão em TypeScript. O Phaser só amplia o `ImageData` e chama `update` a cada refresh. Tauri e Capacitor empacotam essa mesma pasta `builds/web`. Não há uma segunda regra de jogo por sistema.
 
-| Componente | Versão | Função |
+O laboratório em C11 (`make run` no Mac, `gcc` no Windows) implementa as mesmas constantes e é conferido pelos mesmos vetores. Ele existe para ler o núcleo sem Node. O pacote que vai para as cinco plataformas é o da árvore TypeScript.
+
+## Pacotes
+
+| Pacote | Onde entra | Para quê |
 | --- | --- | --- |
-| Node.js | 24.18 | npm, testes e build |
-| TypeScript | 7.0.2 | tipagem; o Node executa os testes direto do `.ts` (remoção de tipos) |
-| Phaser | 4.2.1 | renderização 2D e entrada na web |
-| Vite | 8.3.4 | desenvolvimento e build HTML5 |
-| vite-plugin-singlefile | 2.3.3 | gera um único `index.html`, que abre por duplo clique |
-| Playwright | latest | capturas de tela e testes de navegador (`tools/capturas/`) |
+| `typescript` 5.8 | desenvolvimento | Tipos estritos, `tsc --noEmit` antes do build |
+| `vite` 6 | desenvolvimento e web | Servidor e pasta `builds/web` |
+| `tsx` | `npm test` | Roda `src/core/selftest.ts` sem canvas |
+| `phaser` 3.88 | runtime | Loop, `Scale.FIT`, textura de canvas, `pixelArt` |
+| `@capacitor/core` e `@capacitor/cli` 7 | celular | Embrulha `builds/web` num projeto nativo |
+| `@capacitor/android`, `@capacitor/ios` | celular | Projetos Gradle e Xcode, depois de `cap add` |
+| `@tauri-apps/cli` 2 | Mac e Windows | Abre uma janela nativa em cima do mesmo front |
+| Tauri (crate Rust) 2 | `src-tauri` | Binário `.app`, `.dmg`, `.exe` |
 
-Observação para o código: o modo de remoção de tipos do Node não aceita propriedades de
-parâmetro (`constructor(private x)`) nem `enum`, e exige `import type` para tipos. Por isso o
-núcleo usa campos explícitos e importações de tipo.
+Não há runtime de jogo além do Phaser, e o Phaser não decide colisão. Não há SDL, Godot nem emulador de 6502 no executável.
 
-## Desktop (Tauri)
+`ferramentas/rea` é o clone de [morluto/rea](https://github.com/morluto/rea.git), usado como método de leitura. O alvo desta passagem é uma imagem 6502 de 4 KB. O REA não tinha, nesta máquina, um motor 6502 ligado (Ghidra, IDA ou Hopper). A listagem que fechou `$FAC6`, `$F63A`, `$F78D` e `$F8E2`–`$F92F` foi gerada por `laboratorio/04-disassembly/disasm6502.py` sobre `original/River Raid (1982) (Activision) [!].a26`, com o mesmo critério do REA: observação, derivação, inferência e lacuna. O clone não entra no `npm run build`.
 
-| Componente | Versão | Função |
+## Uma base, cinco cascas
+
+```
+src/**/*.ts  +  assets/
+        |
+        |  vite build
+        v
+   builds/web          HTML, JS, CSS, WASM não é necessário:
+                       o quadro cabe em JS puro a 60 fps
+        |
+        +-- navegador          a própria pasta
+        +-- Tauri              src-tauri aponta frontendDist para ../builds/web
+        +-- Capacitor          capacitor.config.json aponta webDir para builds/web
+```
+
+A detecção da casca está em `src/platform.ts`.
+
+| Casca | Como é reconhecida | Entrada |
 | --- | --- | --- |
-| @tauri-apps/cli | 2.12.3 | comando `tauri build` |
-| crate `tauri` | 2.12 | janela e empacotamento |
-| Rust | 1.99.1 | compilação |
+| Desktop | `window.__TAURI_INTERNALS__` ou `window.__TAURI__` | Teclado apenas. O HUD nem é montado para receber ponteiro |
+| Celular | `window.Capacitor.isNativePlatform()` | Cruz e botão de tiro, sempre |
+| Web | o resto | Se existe `ontouchstart`, mostra o HUD. Se não existe, só o teclado |
 
-Arquivos: `src-tauri/` (`tauri.conf.json`, `src/main.rs`, `capabilities/`). O Tauri roda
-`npm run build:desktop` e embute `builds/desktop`.
+`ontouchstart` é o teste pedido. Não usamos `maxTouchPoints`, porque um trackpad de notebook pode inflar esse número e acender o HUD num Mac que deveria ficar no teclado.
 
-- **macOS** (`make build-mac`): gera `River Raid.app`. Não está assinado. Na primeira
-  abertura, use Controle + clique > Abrir.
-- **Windows** (`make build-win`): compilação cruzada a partir do Mac, com o target
-  `x86_64-pc-windows-msvc`, `cargo-xwin` como runner e o LLVM do Homebrew (`llvm-rc` e
-  `clang-cl`, necessários para embutir o ícone e os metadados). Gera só o `.exe` (sem
-  instalador). Os arquivos do SDK do Windows ficam em `tools/xwin-cache/`. O `.exe` é PE32+
-  x86-64 e foi verificado no cabeçalho, mas **não foi executado**. O WebView2 precisa estar
-  instalado no Windows (já vem no Windows 10 e 11 atualizados).
+O áudio da web chama `AudioContext.resume()` no primeiro `pointerdown` ou no Enter. Tauri e Capacitor passam pela mesma função; no aplicativo nativo o gesto da tela de início também vale, e o contexto não fica bloqueado depois disso.
 
-## Mobile (Capacitor)
+## Web
 
-| Componente | Versão | Função |
-| --- | --- | --- |
-| @capacitor/core, ios, android, cli | 8.5.3 | projetos nativos e sincronização |
+```bash
+npm install
+npm run dev      # http://localhost:5173
+npm run build    # escreve builds/web
+npm run preview  # serve a pasta gerada
+```
 
-Arquivos: `capacitor.config.ts` (aponta para `builds/mobile`), `ios/`, `android/`.
-`make build-mobile` gera o HTML mobile e cada alvo chama `npx cap sync`.
+`vite.config.ts` fixa `outDir` em `builds/web` e `target` em `es2022`. A página é `index.html`. O canvas nasce com 160×192 e o Phaser o encaixa na janela com `FIT` e `CENTER_BOTH`. CSS: `image-rendering: pixelated` e fundo preto.
 
-**iOS** (`make build-ios`): Xcode 27.1 com o SDK do simulador iOS 27.1. O build roda com
-`CODE_SIGNING_ALLOWED=NO` e grava os intermediários em `builds/.xcode`. O app foi instalado e
-aberto no iPhone 18 Pro (simulador) com `xcrun simctl`, e a captura mostra o título com a faixa
-de controles. Para aparelho real e App Store, é preciso uma equipe de assinatura no Xcode.
+Publicar é copiar `builds/web` para o host estático. Não há servidor de jogo.
 
-**Android** (`make build-android`): precisa de um JDK e do Android SDK.
+## Mac e Windows pelo Tauri
 
-- SDK: `tools/android-sdk/` (command-line tools, platform-tools, platforms;android-35,
-  build-tools;35.0.0). É instalado pelo `sdkmanager` dentro do projeto e fica fora do git.
-- JDK: **25**. O Capacitor exige `source release 21` ou mais, então o JDK 17 não serve. O
-  Gradle não roda em JDK 26 (erro de versão de classe). O Makefile localiza o JDK 25 com
-  `/usr/libexec/java_home -v 25`.
-- Gradle: **9.5.0**, fixado no wrapper. O `cap sync` pode trocar o wrapper para uma versão
-  incompatível com o plugin do Android (AGP 8.13): o 9.7 quebra essa combinação. Por isso
-  `make build-android` reescreve o wrapper para 9.5.0 antes de compilar.
-- Resultado: `builds/android/app-debug.apk`, 4,5 MB. **Não foi instalado em aparelho nem em
-  emulador.**
+`src-tauri/tauri.conf.json` aponta `frontendDist` para `../builds/web` e, em desenvolvimento, para `http://localhost:5173`. A janela nasce em 480×820 e pode ser redimensionada: o FIT recalcula a faixa e mantém 160:192.
 
-## Ferramentas de análise do ROM
+```bash
+# Rust estável no PATH: https://rustup.rs
+npm run desktop:dev
+npm run desktop
+```
 
-| Ferramenta | Situação |
+Saída de release: `src-tauri/target/release/bundle/`.
+
+| Sistema | Artefato |
 | --- | --- |
-| `tools/rom/disasm6502.py` | desmontador próprio; gera a listagem em `docs/analise/` |
-| `tools/rom/cpu6502.py` | emulador 6502 mínimo; roda o ROM e registra as escritas do TIA |
-| REA (`tools/rea`) | clone do `morluto/rea`, **sem uso** |
+| macOS | `.app` e `.dmg` |
+| Windows | `.exe` (NSIS) e, se o toolchain WiX estiver presente, MSI |
 
-O REA suporta binário bruto de 6502, mas só com o provedor Ghidra. Ghidra, Hopper e IDA não
-estão instalados, e o `objdump` do sistema não tem alvo 6502. A análise foi feita com as
-ferramentas acima. Para usar o REA de verdade, é preciso instalar o Ghidra, o que está fora da
-pasta do projeto e precisa de aprovação.
+O perfil `release` do `Cargo.toml` liga LTO e `opt-level = 3`. O binário não embute Node. Teclado exclusivo: `wantsTouchHud` devolve falso assim que a casca é Tauri, inclusive num laptop com tela de toque.
 
-## Pré-requisitos por alvo
+O `make run` continua gerando o binário Cocoa do laboratório, sem Tauri. São duas portas de entrada no Mac; a regra de jogo conferida pelo teste é a mesma.
 
-| Alvo | Precisa de |
+## Android e iOS pelo Capacitor
+
+`capacitor.config.json`:
+
+```json
+{
+  "appId": "local.riverraid.lab",
+  "appName": "River Raid",
+  "webDir": "builds/web"
+}
+```
+
+```bash
+npx cap add android    # uma vez, pede Android Studio
+npx cap add ios        # uma vez, pede Xcode num Mac
+npm run android        # build web + cap sync android
+npm run ios            # build web + cap sync ios
+```
+
+`cap sync` copia `builds/web` para o projeto nativo. O WebView é o jogo. A casca Capacitor marca `isNativePlatform()`, então a cruz aparece mesmo que alguém teste num simulador sem o evento de toque ainda disparado.
+
+| Loja | O que o IDE gera |
 | --- | --- |
-| `build-web`, `build-mac` | Node, npm, Rust |
-| `build-win` | Rust com o target `x86_64-pc-windows-msvc`, LLVM (`brew install llvm`) |
-| `build-android` | JDK 25, Android SDK em `tools/android-sdk` |
-| `build-ios` | Xcode com um SDK de simulador iOS |
+| Android | `.apk` para instalar, `.aab` para a Play Store, ambos pelo menu Build do Android Studio |
+| iOS | `.ipa` pelo Archive do Xcode |
+
+Não há código Kotlin nem Swift de regra. Um projeto nativo futuro que queira o núcleo em C liga `src/platform/android/CMakeLists.txt` (`riverlab`) e desenha o mesmo quadro de `river_present`. Esse caminho não substitui o Capacitor; é a porta do laboratório.
+
+## Por que esta combinação aguenta 60 fps
+
+O estado do quadro é pequeno: 192×4 bytes de mapa, 8 alvos, um inteiro de combustível, um acumulador de scroll. O desenho é um buffer de CPU. A GPU, quando o Phaser escolhe WebGL, só apresenta a textura. Não há física de engine, não há atlas dinâmico, não há coleta de lixo obrigatória no meio do quadro (os atores são reaproveitados).
+
+No navegador o limite prático é o `putImageData` de 123 KB mais o FIT. Nos binários Tauri e Capacitor o mesmo JS roda no WebView do sistema, com o mesmo orçamento. O binário C do laboratório faz o equivalente em `river_present` e entrega o buffer ao Cocoa ou ao GDI.
+
+## O que fica de fora de propósito
+
+- Emulador de TIA. O kernel de `$F13A` não é executado.
+- Bytes crus de `GRP0` como sprite. As máscaras são desenhos da recriação, exportados para `assets/graphics`.
+- WASM. O quadro não precisa de módulo nativo para segurar 60 fps. A pasta web é JS.
+- Rede, conta e loja dentro do jogo.

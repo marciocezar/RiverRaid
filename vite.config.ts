@@ -1,13 +1,14 @@
-import { defineConfig } from "vite";
-import { viteSingleFile } from "vite-plugin-singlefile";
+import { defineConfig } from 'vite'
 
-// Um único index.html com o JavaScript embutido: funciona por duplo clique (file://)
-// e em qualquer servidor estático, sem caminhos absolutos.
 export default defineConfig({
-  base: "./",
-  plugins: [viteSingleFile()],
   build: {
-    outDir: "builds/web",
+    outDir: 'builds/web',
     emptyOutDir: true,
+    target: 'es2022',
+    chunkSizeWarningLimit: 1600,
   },
-});
+  server: {
+    port: 5173,
+    strictPort: true,
+  },
+})

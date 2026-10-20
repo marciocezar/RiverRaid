@@ -1,0 +1,3 @@
+/Users/marcio/_learn/Games/RiverRaide/build/android-host/CMakeFiles/riverlab.dir
+/Users/marcio/_learn/Games/RiverRaide/build/android-host/CMakeFiles/edit_cache.dir
+/Users/marcio/_learn/Games/RiverRaide/build/android-host/CMakeFiles/rebuild_cache.dir

@@ -1,198 +1,132 @@
 # Arquitetura
 
-## Princípios
-
-1. **O núcleo não conhece tela nem som.** `src/core` e `src/entities` são TypeScript puro.
-   Os testes rodam no Node, sem navegador.
-2. **O que é extraído do ROM é testado contra o próprio ROM.** O LFSR é comparado com a
-   execução do código original num emulador de 6502 (`tools/rom/`).
-3. **O que não foi extraído é projetado, e a documentação diz isso.** Ver a seção
-   "Limites" no fim.
-4. **Uma regra por lugar.** A plataforma decide os controles em `src/plataforma.ts`, o
-   estado do jogo fica no `Mundo`, e a cena só desenha e encaminha entrada.
-
-## Estrutura
+A simulação não desenha e o desenho não decide colisão. O mesmo quadro serve ao navegador, ao Tauri e ao Capacitor. O laboratório em C (`src/core/river.c`, `src/systems/present.c`, `src/systems/audio.c`) repete as mesmas regras para o `make run`, e os dois lados travam os mesmos vetores de teste.
 
 ```
-src/core/         núcleo puro
-  lfsr.ts         gerador de 16 bits (extraído de $FAC6)
-  rng.ts          números aleatórios a partir do LFSR
-  rio.ts          margens do rio, linha por linha
-  mundo.ts        estado da partida e regra de um quadro
-  config.ts       constantes (tela 160x192, 60 quadros por segundo)
-src/entities/     dados e regras de cada entidade
-  aviao.ts  inimigo.ts  posto.ts  tiro.ts  explosao.ts  caixa.ts
-src/render/       pintura da cena, sem regra de jogo
-  escala.ts       densidade da tela (ESCALA = 2: canvas de 320x384 pixels reais)
-  tamanhos.ts     tamanho lógico de cada sprite (a tela de jogo é 160x192)
-  sprites.ts      desenho vetorial de cada sprite, em alta resolução
-  atlas.ts        gera os sprites (contorno, gradiente, sombra) e os padrões de água e grama
-  quadro.ts       framebuffer de 320x384 onde tudo é pintado, em coordenadas lógicas
-  cenario.ts      água e margens que rolam, árvores, espuma e reflexos
-  ponte.ts        ponte de treliça, pilares e miolo vermelho
-  efeitos.ts      explosões, rotor, chama do jato e rastro de espuma
-  hud.ts          painel de baixo: pontos, vidas, nível e combustível
-  desenho.ts      monta o quadro inteiro a partir do Mundo (só lê)
-  fonte.ts        fonte pixelada 3x5
-  cores.ts        paleta
-src/systems/      o que fala com o mundo externo
-  entrada.ts      teclado e toque viram uma Entrada
-  hud-toque.ts    faixa de controles de toque
-  som.ts          sons sintetizados com WebAudio
-src/cenas/        título, partida, galeria de arte (?galeria) e o quadro compartilhado
-src/plataforma.ts decide os controles por plataforma
-src/main.ts       monta o Phaser
-tests/            testes do núcleo e vetores gerados pelo ROM
-tools/rom/        desmontador, emulador 6502 e geradores de vetores
-tools/capturas/   Playwright para capturas de tela e testes de navegador
-tools/rea/        clone do REA (sem uso: ver analise/README.md)
-docs/             esta documentação e a análise do ROM
-builds/           saídas compiladas (ignoradas pelo git)
+teclado ou toque
+        |
+        v
+src/systems/input.ts     escolhe os bits e esconde o HUD no desktop
+        |
+        v
+src/core/loop.ts         um quadro, sem Phaser
+        |
+        +-- src/core/lfsr.ts          passo $FAC6, sem import de tela
+        +-- src/core/river.ts         margens, ilha, scroll fracionário
+        +-- src/entities/player.ts    marcha e tiro
+        +-- src/systems/collision.ts  caixas, posto, ponte, combustível
+        |
+        v
+src/systems/render.ts    ImageData 160×192
+src/systems/audio.ts     dois canais no papel do TIA
+        |
+        v
+Phaser Scale.FIT         amplia sem esticar a faixa
 ```
 
-## Laço de jogo
+## Componentes, sem alocação no quadro
 
-A cena de jogo tem passo fixo de 1/60 s. Cada passo chama `Mundo.atualizar(entrada)` e a
-camada de som processa os eventos do quadro. Depois, a cena desenha o estado. O tempo da tela
-não muda a velocidade do jogo: se a tela rodar a 120 Hz, o jogo continua a 60 quadros por
-segundo e só a animação fica mais suave.
+Cada alvo é um registro fixo de oito posições. Os componentes moram no próprio registro: espécie (`kind`), posição (`x`, `y`), velocidade (`vx`), caixa (`w`, `h`) e `timer`. O quadro percorre esse vetor. Não há `new` no meio do frame, e o mapa do rio é três `Uint8Array` de 192 bytes (margem esquerda, margem direita, ilha).
 
-Pressões de tecla ou toque muito curtas, que começam e terminam entre dois quadros, são
-guardadas pela `LeitorEntrada` e entregues no quadro seguinte. Sem isso, um toque rápido se
-perderia.
+O gerador não importa `render.ts`. Dá para avançar dez mil quadros num teste de Node sem canvas e sem áudio. É o que `npm test` faz.
 
-## Gerador do rio
+A caixa de impacto não é o retângulo do PNG. `src/entities/hitbox.ts` aplica um inset quando a máscara tem borda vazia. O avião colide com 5×4, menor que o sprite 7×6. O tiro na ponte só vale numa faixa de 12 pixels no centro; encostar na ponte inteira ainda derruba o avião.
 
-### Extraído do ROM (verificado)
+## O LFSR, transcrito
 
-O estado do rio é um LFSR de 16 bits, transcrição da rotina `$FAC6`:
+Rotina `$FAC6` do cartucho, semente inicial `$E9=$14`, `$EA=$A8` (a cópia de `$FDB1` deixa esses bytes em `$BE`/`$BF`, e `$F5E8` os leva para `$E9`/`$EA`):
 
 ```
-LDA $EA / ASL / ASL / ASL / EOR $EA / ASL / ROL $E9 / ROL $EA / RTS
+LDA $EA
+ASL
+ASL
+ASL
+EOR $EA
+ASL
+ROL $E9
+ROL $EA
+RTS
 ```
 
-Em `src/core/lfsr.ts`:
+Em inteiros de 8 bits, com `hi` = `$EA` e `lo` = `$E9`:
 
-```ts
-const feedback = ((state >> 15) ^ (state >> 12)) & 1;
-return ((state << 1) | feedback) & 0xffff;
+```
+a = hi << 1 << 1 << 1
+a = a xor hi
+carry = bit 7 de a
+lo' = (lo << 1) | carry
+hi' = (hi << 1) | bit 7 do lo antigo
 ```
 
-Verificação:
-- 405 pares de estado (fixos e aleatórios) e uma sequência de 200 passos a partir de `01:00`,
-  gerados executando `$FAC6` no emulador (`make oracle`). A implementação TypeScript passa em
-  todos (`tests/lfsr.test.ts`).
-- Para validar o próprio emulador, 20 mil estados aleatórios foram comparados direto no 6502,
-  sem divergência.
-- Período medido a partir de `01:00`: **57 337** passos. Um LFSR de 16 bits só percorre
-  65 535 estados se o polinômio for primitivo, e este não é. O rio se repete com esse período.
+O acumulador final é descartado, como os chamadores em `$F8BC` e `$F8CD` fazem. Os oito primeiros pares, a partir da semente, são o teste:
 
-### Projetado a partir da análise (não verificado contra o ROM)
-
-`src/core/rio.ts` usa o LFSR como fonte de decisões. A cada segmento de 6 a 16 linhas, ele
-sorteia um novo centro e uma nova largura da água. As margens caminham um pixel por linha em
-direção a esses alvos, o que evita saltos. A largura mínima e máxima diminuem com o nível.
-
-Isso segue a ideia da análise (segmentos decididos pelo LFSR, margens com variação limitada),
-mas **a montagem exata das margens do ROM ainda não foi transcrita**. Por isso o mapa não é
-idêntico ao original. Os testes garantem o que vale no projeto: determinismo, largura mínima,
-e variação de no máximo dois pixels por linha.
-
-## Regras da partida (projetadas)
-
-| Regra | Valor | Origem |
+| Passo | `$E9` | `$EA` |
 | --- | --- | --- |
-| Tela | 160 x 192 pixels lógicos, escalados sem distorção | área visível do Atari 2600 |
-| Avião | linha fixa em y=150, anda na horizontal | projeto |
-| Velocidade | 4 níveis, cima e baixo mudam uma marcha por aperto | projeto |
-| Combustível | 100 máximo, gasto por quadro = 0,012 + 0,004 x velocidade | projeto |
-| Reabastecimento | +0,5 por quadro dentro da área de abastecimento do posto (34x30, maior que o corpo de 20x13) | projeto |
-| Postos | um a cada 260 linhas de rio | projeto |
-| Posto destruído a tiro | atirar no corpo destrói o posto (+50 pontos, sem reabastecer); atirar só na área não faz nada, como no original | projeto |
-| Inimigos | navio 30, helicóptero 60, jato 80 pontos | projeto |
-| Tiros | até dois na tela | projeto |
-| Vidas | 3; queda com 90 quadros de espera e 120 de invulnerabilidade | projeto |
-| Nível | a cada 500 pontos, o rio fica mais estreito | projeto |
-| Ponte | atravessa o rio de margem a margem; derruba o avião se estiver intacta; tiro no miolo vermelho abre a ponte (+200 pontos); tiro no tabuleiro só faz faísca | projeto |
-| Ponte: intervalo | uma ponte nova só aparece depois de 1 800 linhas de rio | projeto |
+| 1 | 29 | 50 |
+| 2 | 53 | A0 |
+| 3 | A7 | 40 |
+| 4 | 4E | 81 |
+| 5 | 9D | 02 |
+| 6 | 3A | 05 |
+| 7 | 74 | 0A |
+| 8 | E8 | 14 |
 
-Cores: a água e a margem usam os registradores medidos no ROM, `COLUBK = $84` (azul) e
-`COLUPF = $D6` (verde). Os tons em RGB são aproximações, não a paleta exata do TIA.
+## Como o mapa usa esses bits
 
-## Arte
+A versão anterior chamava o gerador em toda linha e empurrava o centro dois pixels a cada oito passos. Isso produz tremor, não o rio do cartucho.
 
-Os sprites são desenhados em vetor, em alta resolução (`src/render/sprites.ts`): cada um tem
-contorno escuro, preenchimento com gradiente e detalhes (vidro, luzes, treliça). O atlas
-(`src/render/atlas.ts`) gera cada sprite em ESCALA vezes os pixels lógicos, e a sombra projetada
-é a silhueta do sprite em preto translúcido. O tamanho lógico de cada um fica em
-`src/render/tamanhos.ts`. Um teste confere que cada caixa de colisão cabe no sprite.
+No ROM, `$FAC6` é chamado quando um segmento novo nasce (`$F8BC`, `$F8CD`), não em cada scanline. A direção fica no byte `$89`. A magnitude é o nibble baixo de `$E9`: se for menor que 2, soma 2 (`$F916`); o teto é `$0E`, ou `$0D` quando o bit 7 de `$89` está ligado, ou `$08` no trecho de ilha (`$F921`–`$F92D`). O sentido troca quando `$E9 & $30` é zero ou quando o bit 7 de `(ASL $89) EOR $89` está ligado (`$F8ED`).
 
-A tela lógica continua 160×192: regras, colisões e coordenadas não mudam. O canvas tem o
-dobro de pixels (320×384): a câmera do Phaser aplica zoom ESCALA com origem no canto superior
-esquerdo, e a imagem da tela é desenhada com escala 1/ESCALA, então sai pixel a pixel. Os
-toques são convertidos de volta para coordenadas lógicas dividindo pelo zoom.
+A recriação guarda essa decisão e repete a mesma margem por `4 + ($E9 & $07)` linhas. Por isso o teste exige um trecho reto de pelo menos quatro linhas. Ilha no meio só aparece com o rio largo, o bit 7 da direção ligado e os dois bits baixos de `$E9` em zero, e só se sobrar água dos dois lados.
 
-A água e a grama são padrões de 32 pixels reais (16 lógicos) que deslocam com a rolagem do rio:
-o movimento da água é exatamente a velocidade do avião. As árvores aparecem a cada 19 linhas
-do mundo, em posições fixas por linha.
+O que ainda é rasterização, e não byte de `PF1`/`PF2`: o kernel do TIA em `$F0F9` escreve o playfield a partir dos ponteiros `$D9` e `$DB`, montados em `$FBD5` com tabelas (`$FCF1`, `$FBB7`). Essa passagem não fechou o índice “este byte de playfield é este pixel”. O centro, a meia-largura e a ilha são a leitura jogável da máquina de estados. Os testes travam o gerador e a forma (trechos retos), não uma foto do TIA.
 
-A ponte é de treliça, com pilares nas margens, miolo vermelho que pisca enquanto está
-intacta, e queda animada quando é destruída. A galeria (`?galeria`) mostra os objetos,
-as duas pontes e uma explosão em fases para revisão.
+## Scroll contínuo e 60 quadros
 
-Cores: a água e a margem partem dos registradores medidos no ROM. As demais cores e todo o
-desenho são projeto.
+`$F865` soma a velocidade `$B5` num acumulador (`$8C`) e só então o mundo anda. A recriação faz o mesmo com um float:
 
-## Som
+```
+scrollAcc += speed / 48
+linhas = floor(scrollAcc)
+scrollAcc -= linhas
+```
 
-Sons sintetizados em WebAudio, disparados pelos eventos do `Mundo`: tiro (onda quadrada
-descendo), explosão (rajada de ruído), reabastecimento, alerta de combustível baixo e nível
-novo. O motor do jato é um ruído filtrado cujo volume e frequência sobem com a velocidade.
+Na marcha mínima (`$20`), o primeiro quadro soma `32/48`, que é menor que 1. Nenhuma linha anda, e o resto fica guardado. O teste `test_scroll` trava isso. Na marcha máxima (`$70`) saem uma ou duas linhas por quadro, nunca o salto fixo de três linhas da versão anterior.
 
-O ROM tem seu próprio motor de som, em `F761`–`F81F`, com canais em `$15`–`$1A`. Ele não foi
-recriado: os sons acima são projetados. Medir os registradores exige uma partida em andamento
-no emulador, o que ainda não foi alcançado (ver `analise/README.md`).
+O relógio é o `requestAnimationFrame` do Phaser, alinhado ao refresh do monitor. O trabalho de um quadro é:
 
-### Política de áudio
+- percorrer 192 bytes de margem
+- no máximo 8 alvos
+- um `putImageData` de 160×192×4, cerca de 123 KB
 
-O AudioContext é criado e retomado dentro de um evento real do usuário (toque, clique ou tecla),
-registrado no `window` no boot (`src/main.ts`). Também é retomado quando o app volta ao primeiro
-plano e antes de cada som. O desbloqueio não roda no laço do Phaser, porque o WebKit (Tauri no
-Mac, Capacitor no iOS) só aceita a retomada dentro de um gesto.
+Isso cabe em bem menos de 16 ms num navegador atual e não pede shader. O Phaser está em `Scale.FIT` com `pixelArt`: a faixa 160:192 é centrada, o vizinho mais próximo não borra o pixel, e o que sobra da janela fica preto. O HUD de toque é HTML por cima, fora do canvas, então não altera a proporção.
 
-Verificado com instrumentação do AudioContext, lendo o estado final depois de jogar: o contexto
-fica `running` e o tiro cria oscilador, nas builds web, desktop e mobile, nos motores Chromium e
-WebKit. Ainda não foi ouvido em aparelho: o botão silencioso do iPhone pode mutar o áudio do
-WebKit, e isso só se confirma num aparelho real.
+No binário nativo do laboratório o timer é 1/60 s (`NSTimer` no Mac). O mesmo acumulador evita o salto de marcha inteira.
 
-## Plataformas
+## Combustível
 
-`src/plataforma.ts` lê `VITE_PLATFORM`, definida pelo Makefile em cada build:
+`$B7:$B8` nasce em `$FFFF` e perde `$20` por passagem em `$F63A`. Zerar o par cai no caminho de falha. O aviso troca o canal 0 quando `$B7 < $40` (`$F78D`). O posto soma 1 no byte alto (`$F613`), isto é, `+$100` por quadro de contato, com teto em `$FFFF`.
 
-- `desktop` (Tauri, Mac e Windows): nunca mostra o HUD de toque.
-- `mobile` (Capacitor, iOS e Android): mostra o HUD sempre.
-- `web` (padrão): mostra o HUD só se `ontouchstart` existir ou `maxTouchPoints > 0`.
+A barra na tela é esse inteiro dividido por 65535. A drenagem não multiplica pela marcha: ir mais rápido cobre mais rio com o mesmo tanque. Trinta quadros sem encostar no posto deixam o tanque em `0xFFFF - 30*0x20`.
 
-Cada build tem sua pasta: `builds/web`, `builds/desktop`, `builds/mobile`. Esse isolamento
-evita que um build sobrescreva o outro, o que já aconteceu antes e foi corrigido.
+## Áudio
 
-Verificado com Playwright, medindo a proporção do canvas (160:192 sem HUD, 160:240 com HUD):
+Canal 0 fica num `AudioBufferSourceNode` em loop. O buffer é um número inteiro de períodos do LFSR de 9 bits (o polinômio do ruído `AUDC 8`: bit 0 xor bit 4). A emenda do loop cai no mesmo estado, então não há clique de costura. A marcha muda `playbackRate` (`28` na lenta, `12` na rápida), que é o papel de `AUDF0` em `$F7BD`: divisor menor, tom mais agudo. O estado do ruído não é zerado a cada quadro.
 
-| Build | Com toque | Sem toque |
-| --- | --- | --- |
-| web | com HUD | sem HUD |
-| mobile | com HUD | com HUD |
-| desktop | sem HUD | sem HUD |
+Com o byte alto do combustível abaixo de `$40`, o ganho do ruído vai a zero e entra um tom quadrado, no papel de `AUDC $0C` / volume `$0F`.
 
-## Limites
+Canal 1 dispara envelopes curtos: tiro (~80 ms), explosão (~200 ms), queda (~330 ms), posto (~100 ms) e ponte (~250 ms). Os mesmos envelopes estão em `assets/audio/*.wav`.
 
-- **O mapa não é idêntico ao do ROM.** O LFSR é idêntico; a montagem das margens e a
-  lógica da partida não foram transcritas.
-- **A regra de início de partida do ROM não foi encontrada.** Ver `analise/README.md`.
-- **Sprites e sons não foram extraídos.** O avião, os inimigos, a ponte e os sons são
-  desenhados e sintetizados (ver a seção Arte). As cores são medidas, o resto é projetado.
-- **Os valores de jogo são projeto.** Combustível, pontos, velocidades e tempos não vêm do
-  ROM.
-- **Som em aparelho não confirmado.** Verificado no navegador (Chromium e WebKit); o botão silencioso do iPhone e o áudio do Android e do Windows ainda precisam de teste no aparelho.
-- **Não testado em aparelho nem em Windows real.** O simulador iOS e o navegador com toque
-  foram testados; o APK e o `.exe` foram gerados mas não executados em aparelho ou Windows.
+No navegador, `AudioContext` só sai de `suspended` no clique ou no Enter da tela de início. Sem esse gesto o `pump` descarta os bits de som e o quadro segue mudo, que é a regra da plataforma, não um defeito do loop.
+
+## O que o quadro faz, na ordem
+
+1. A casca entrega os bits de entrada.
+2. A marcha sobe ou desce 2 se cima ou baixo está segurado, entre `$20` e `$70`.
+3. O avião e o tiro se movem.
+4. O acumulador de scroll consome linhas inteiras e gera margem nova no topo.
+5. O combustível perde `$20`.
+6. Margem, ilha, alvos, posto e ponte são testados com as caixas.
+7. A casca desenha o `ImageData` e lê os bits de som, zerando-os.
+
+Pausa e fim de jogo não avançam o mapa. A tela de início rola a `0,65` pixel por quadro, devagar, para o rio já estar vivo antes do Enter.

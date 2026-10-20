@@ -1,0 +1,53 @@
+arquivo: River Raid (1982) (Activision) [!].a26
+sha256 arquivo: cb4551c2c5f1f046e5fd509bb790cd85e082ee27905dbdbda0f8f56cc79dee40
+sha256 imagem 4kb: 4c6842b8af64fc75e599b773821b3e6bee8e5028f5d63414821b0d63f0b2dfe9
+copias identicas de 4kb: 4
+RESET $F000  NMI $841E  IRQ $0000
+instrucoes alcancadas: 1587
+bytes de codigo: 3029 / 4096
+blocos nao alcancados (dados ou codigo morto):
+  $FAFF-$FBD4  (214 bytes)
+  $FBEF-$FDD7  (489 bytes)
+  $FDF6-$FEFF  (266 bytes)
+  $FF23-$FF5B  (57 bytes)
+  $FFB3-$FFD2  (32 bytes)
+  $FFF7-$FFFF  (9 bytes)
+escritas em hardware observadas:
+  AUDC0      1  $F7D4
+  AUDC1      1  $F803
+  AUDF0      1  $F7D6
+  AUDF1      1  $F801
+  AUDV0      1  $F7D8
+  AUDV1      1  $F805
+  COLUBK     3  $F065, $F35C, $F37F
+  COLUP0     2  $F056, $FFAA
+  COLUP1     3  $F107, $F183, $FFAC
+  COLUPF     4  $F128, $F17B, $F22D, $F389
+  CTRLPF     2  $F07A, $F370
+  CXCLR      2  $F0BB, $F31E
+  ENABL      1  $F3D8
+  ENAM0      5  $F1A8, $F218, $F25C, $F2CB, $F330
+  GRP0      26  $F0F7, $F177, $F1AA, $F1DC, $F21A, $F233, $F25E, $F2A0
+  GRP1      17  $F0F3, $F16F, $F18B, $F1D0, $F356, $F3A6, $F3B0, $F3B4
+  HMCLR      3  $F0BD, $F2DE, $F391
+  HMOVE     18  $F135, $F175, $F1A6, $F1D6, $F216, $F22B, $F25A, $F298
+  HMP0       2  $F372, $FAF2
+  HMP1       3  $F27D, $F2B5, $F376
+  INTIM      2  $F12E, $F807
+  NUSIZ0     2  $F06A, $F383
+  NUSIZ1     4  $F03E, $F082, $F2D5, $F385
+  PF0        2  $F092, $F35E
+  PF1        7  $F0FB, $F173, $F1E2, $F239, $F2A6, $F309, $F360
+  PF2        7  $F0FF, $F187, $F1E6, $F23D, $F2AA, $F30D, $F362
+  REFP0      2  $F070, $F364
+  REFP1      3  $F084, $F2D7, $F366
+  RESP0      2  $F36C, $FAFC
+  RESP1      4  $F26C, $F27B, $F294, $F36E
+  SWCHA      1  $F572
+  SWCHB      4  $F04A, $F49E, $F73B, $F81F
+  TIM64T     2  $F474, $F81C
+  VBLANK     2  $F137, $F477
+  VDELP0     2  $F38D, $F44F
+  VDELP1     1  $F07C
+  VSYNC      3  $F006, $F810, $F818
+  WSYNC     22  $F133, $F1A4, $F1D4, $F214, $F258, $F296, $F2C7, $F2F9

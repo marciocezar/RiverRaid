@@ -1,0 +1,75 @@
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #000;
+  overflow: hidden;
+  touch-action: none;
+}
+
+#stage {
+  position: fixed;
+  inset: 0;
+}
+
+#stage canvas {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+#touch {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+#touch button {
+  pointer-events: auto;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  font: 600 18px/1 sans-serif;
+  border-radius: 12px;
+  touch-action: none;
+  user-select: none;
+}
+
+.pad {
+  position: absolute;
+  left: 18px;
+  bottom: 18px;
+  display: grid;
+  grid-template-columns: 64px 64px 64px;
+  grid-template-rows: 64px 64px;
+  gap: 8px;
+}
+
+.pad button:nth-child(1) {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.pad button:nth-child(2) {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.pad button:nth-child(3) {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.pad button:nth-child(4) {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.fire {
+  position: absolute;
+  right: 22px;
+  bottom: 28px;
+  width: 88px;
+  height: 88px;
+  border-radius: 44px;
+}

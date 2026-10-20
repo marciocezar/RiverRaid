@@ -1,38 +1,34 @@
 /**
- * Gerador procedural do rio (LFSR de 16 bits).
+ * Passo do gerador de 16 bits do cartucho, rotina $FAC6.
  *
- * Transcrição da rotina $FAC6 do cartucho original:
+ *   LDA $EA
+ *   ASL
+ *   ASL
+ *   ASL
+ *   EOR $EA
+ *   ASL
+ *   ROL $E9
+ *   ROL $EA
  *
- *   LDA $EA / ASL / ASL / ASL / EOR $EA / ASL / ROL $E9 / ROL $EA / RTS
- *
- * O estado é o par (EA:E9), com EA como byte alto. Cada passo desloca o estado
- * uma posição à esquerda e injeta no bit 0 o XOR dos bits 15 e 12 do estado
- * (bits 7 e 4 de EA). Não usa memória além do próprio estado de 16 bits.
- *
- * Este módulo não conhece renderização nem áudio.
+ * O acumulador final é descartado. O estado que fica é o par
+ * ($E9, $EA). Este módulo não importa desenho, áudio nem Phaser.
  */
 
-export type RngState = number; // 16 bits: (EA << 8) | E9
-
-export const RNG_MASK = 0xffff;
-
-/** Avança o gerador um passo, exatamente como $FAC6. */
-export function lfsrStep(state: RngState): RngState {
-  const feedback = ((state >> 15) ^ (state >> 12)) & 1;
-  return ((state << 1) | feedback) & RNG_MASK;
+export interface Lfsr {
+  lo: number
+  hi: number
 }
 
-/** Byte baixo do estado (E9 no cartucho). */
-export function lowByte(state: RngState): number {
-  return state & 0xff;
-}
+export const LFSR_SEED: Lfsr = { lo: 0x14, hi: 0xa8 }
 
-/** Byte alto do estado (EA no cartucho). */
-export function highByte(state: RngState): number {
-  return (state >> 8) & 0xff;
-}
-
-/** Monta o estado a partir dos dois bytes, como fazem E9 e EA. */
-export function makeState(e9: number, ea: number): RngState {
-  return ((ea & 0xff) << 8) | (e9 & 0xff);
+export function lfsrStep(state: Lfsr): void {
+  let a = state.hi & 0xff
+  a = (a << 1) & 0xff
+  a = (a << 1) & 0xff
+  a = (a << 1) & 0xff
+  a = (a ^ state.hi) & 0xff
+  const carry = (a >> 7) & 1
+  const carryLo = (state.lo >> 7) & 1
+  state.lo = ((state.lo << 1) | carry) & 0xff
+  state.hi = ((state.hi << 1) | carryLo) & 0xff
 }

@@ -1,29 +1,30 @@
 {
-  "name": "river-raid-mrc",
-  "version": "0.1.0",
+  "name": "river-raid",
   "private": true,
-  "description": "River Raid (Activision, 1982) a partir da engenharia reversa do ROM.",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "test": "node --test tests/lfsr.test.ts tests/rio.test.ts tests/mundo.test.ts tests/estresse.test.ts tests/ponte.test.ts tests/posto.test.ts tests/sprites.test.ts",
-    "tauri": "tauri",
-    "build:desktop": "tsc --noEmit && VITE_PLATFORM=desktop vite build --outDir builds/desktop --emptyOutDir",
-    "build:mobile": "tsc --noEmit && VITE_PLATFORM=mobile vite build --outDir builds/mobile --emptyOutDir"
+    "preview": "vite preview",
+    "test": "tsx src/core/selftest.ts",
+    "desktop": "tauri build",
+    "desktop:dev": "tauri dev",
+    "mobile:sync": "npm run build && cap sync",
+    "android": "npm run build && cap sync android",
+    "ios": "npm run build && cap sync ios"
   },
   "dependencies": {
-    "@capacitor/android": "^8.5.3",
-    "@capacitor/core": "^8.5.3",
-    "@capacitor/ios": "^8.5.3",
-    "phaser": "^4.2.1"
+    "phaser": "^3.88.2"
   },
   "devDependencies": {
-    "@capacitor/cli": "^8.5.3",
-    "@tauri-apps/cli": "^2.12.3",
-    "@types/node": "^26.6.5",
-    "typescript": "^7.0.2",
-    "vite": "^8.3.4",
-    "vite-plugin-singlefile": "^2.3.3"
+    "@capacitor/android": "^7.4.2",
+    "@capacitor/cli": "^7.4.2",
+    "@capacitor/core": "^7.4.2",
+    "@capacitor/ios": "^7.4.2",
+    "@tauri-apps/cli": "^2.7.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5"
   }
 }

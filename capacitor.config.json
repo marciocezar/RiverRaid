@@ -1,0 +1,6 @@
+{
+  "appId": "local.riverraid.lab",
+  "appName": "River Raid",
+  "webDir": "builds/web",
+  "backgroundColor": "#000000"
+}
